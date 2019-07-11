@@ -35,12 +35,15 @@
     "@project-sunbird/ext-framework-server": "0.1.25",
     "OpenRAP": "git://github.com/project-sunbird/OpenRAP.git#release-2.1",
     "body-parser": "^1.19.0",
+    "crypto-json": "^2.0.2",
     "express": "^4.17.0",
     "lodash": "^4.17.11",
+    "machine-uuid": "^1.2.0",
     "openrap-sunbirded-plugin": "0.0.23",
     "portscanner": "^2.2.0",
     "pouchdb": "^7.1.1",
-    "pouchdb-find": "^7.1.1"
+    "pouchdb-find": "^7.1.1",
+    "zlib": "^1.0.5"
   },
   "devDependencies": {
     "@types/lodash": "^4.14.123",

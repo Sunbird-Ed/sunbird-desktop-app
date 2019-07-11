@@ -9,18 +9,43 @@ import { frameworkConfig } from './framework.config';
 import express from 'express';
 import portscanner from 'portscanner';
 import * as bodyParser from 'body-parser';
+import * as cryptoJSON from 'crypto-json';
+import * as zlib from 'zlib';
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let win: any;
+
+let inputFile: any = 'env.json';
+let ENVFile: any = 'gzipEncryptedEnv';
+let encFile: any = 'encryptedEnv.json';
+// var decFile: any = 'decryptedEnv.json';
+let algorithm: any = 'camellia-128-cbc';
+let encoding: any = 'binary';
 
 const expressApp = express();
 expressApp.use(bodyParser.json());
 
 
 // set the env
-const initializeEnv = () => {
-  let envs = JSON.parse(fs.readFileSync(path.join(__dirname, 'env.json'), { encoding: 'utf-8' }));
+const initializeEnv = async () => {
+  let envs = await JSON.parse(fs.readFileSync(path.join(__dirname, 'env.json'), { encoding: 'utf-8' }));
+  if (!(envs['APP_ID'].startsWith('dev')) || !(envs['APP_ID'].startsWith('local'))) {
+    require("machine-uuid")(function(uuid) {
+      fs.readFile(path.join(__dirname, inputFile), { encoding: 'utf-8' }, function (err, data ) {
+        if (err) throw err;
+        data = JSON.parse(data);
+        let encryptedJson = cryptoJSON.encrypt(data, uuid, {encoding, algorithm});
+        encryptedJson['server-uuid'] = uuid;
+        fs.writeFileSync(path.join(__dirname, encFile), JSON.stringify(encryptedJson));
+        let readStream = fs.createReadStream(path.join(__dirname, encFile));
+        let writeStream = fs.createWriteStream(path.join(__dirname, ENVFile));
+        let gzipStream = zlib.createGzip();
+        readStream.pipe(gzipStream).pipe(writeStream);
+        fs.unlinkSync(path.join(__dirname, encFile));
+      });
+    });
+  }
   _.forEach(envs, (value, key) => {
     process.env[key] = value;
   });
