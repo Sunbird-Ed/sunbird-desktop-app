@@ -28,6 +28,11 @@ let appBaseUrl;
 
 const expressApp = express();
 expressApp.use(bodyParser.json());
+//////// crash report start/////////////////////////
+import { CrashReportService } from './crashReportHelper';
+const crashReportService = new CrashReportService();
+crashReportService.init();
+//////// crash report /////////////////////////
 
 const getFilesPath = () => {
   if (_.startsWith(_.toLower(envs.APP_ID), "local")) {

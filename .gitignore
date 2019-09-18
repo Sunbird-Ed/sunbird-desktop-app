@@ -15,4 +15,6 @@ framework.config.d.ts
 framework.config.js
 main.d.ts
 main.js
+crashReportHelper.js
+crashReportHelper.d.ts
 src/database
