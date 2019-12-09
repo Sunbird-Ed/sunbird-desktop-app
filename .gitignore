@@ -15,3 +15,8 @@ framework.config.d.ts
 framework.config.js
 main.d.ts
 main.js
+src/database
+src/openrap-sunbirded-plugin/data/resourceBundles
+src/openrap-sunbirded-plugin/data/frameworks
+src/openrap-sunbirded-plugin/data
+src/telemetry_archived

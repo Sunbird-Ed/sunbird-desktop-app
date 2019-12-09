@@ -1,193 +1,403 @@
-import { containerAPI } from 'OpenRAP/dist/api/index';
-import { app, BrowserWindow } from 'electron';
-import * as _ from 'lodash';
-import * as path from 'path';
-import * as fs from 'fs';
-import { frameworkAPI } from '@project-sunbird/ext-framework-server/api';
-import { HTTPService } from '@project-sunbird/ext-framework-server/services/http-service'
-import { logger } from '@project-sunbird/ext-framework-server/logger'
-import { frameworkConfig } from './framework.config';
-import express from 'express';
-import * as bodyParser from 'body-parser';
-
+import { containerAPI } from "OpenRAP/dist/api/index";
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import * as _ from "lodash";
+import * as path from "path";
+import * as fs from "fs";
+import * as fse from "fs-extra";
+import { frameworkAPI } from "@project-sunbird/ext-framework-server/api";
+import { EventManager } from "@project-sunbird/ext-framework-server/managers/EventManager";
+import { logger } from "@project-sunbird/ext-framework-server/logger";
+import { frameworkConfig } from "./framework.config";
+import express from "express";
+import portscanner from "portscanner";
+import * as bodyParser from "body-parser";
+import { Subject } from "rxjs";
+import { debounceTime } from "rxjs/operators";
+import { HTTPService } from "@project-sunbird/ext-framework-server/services";
+import * as os from "os";
+const startTime = Date.now();
+let envs = {};
+const windowIcon = path.join(__dirname, "build", "icons", "png", "512x512.png");
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let win: any;
+let appBaseUrl;
 
 const expressApp = express();
 expressApp.use(bodyParser.json());
+let fileSDK = containerAPI.getFileSDKInstance("");
 
+const reloadUIOnFileChange = () => {
+  const subject = new Subject<any>();
+  subject.pipe(debounceTime(2500)).subscribe(data => {
+    let currentURL = win.webContents.getURL();
+    console.log(
+      "portal file changed- reloading screen with current url",
+      currentURL
+    );
+    fs.rename(
+      path.join("public", "portal", "index.html"),
+      path.join("public", "portal", "index.ejs"),
+      err => {
+        if (err) console.log("ERROR: " + err);
+        win.reload();
+      }
+    );
+  });
+  fileSDK
+    .watch([path.join("public", "portal")])
+    .on("add", path => subject.next(path))
+    .on("change", path => subject.next(path))
+    .on("unlink", path => subject.next(path));
+};
+if (!app.isPackaged) {
+  reloadUIOnFileChange();
+}
+expressApp.use("/dialog/content/import", (req, res) => {
+  const filePaths = importContent();
+  res.send({ message: "SUCCESS", responseCode: "OK", filePaths });
+});
+
+const importContent = () => {
+  const filePaths = dialog.showOpenDialog({
+    properties: ["openFile", "multiSelections"],
+    filters: [{ name: "Custom File Type", extensions: ["ecar"] }]
+  });
+  if (filePaths) {
+    makeImportApiCall(filePaths);
+  }
+  return filePaths;
+};
+
+expressApp.use("/dialog/content/export", (req, res) => {
+  let destFolder = exportContent();
+  if (destFolder && destFolder[0]) {
+    res.send({
+      message: "SUCCESS",
+      responseCode: "OK",
+      destFolder: destFolder[0]
+    });
+  } else {
+    res
+      .status(400)
+      .send({
+        message: "Ecar dest folder not selected",
+        responseCode: "NO_DEST_FOLDER"
+      });
+  }
+});
+
+const exportContent = () => {
+  const destFolder = dialog.showOpenDialog({
+    properties: ["openDirectory", "createDirectory"]
+  });
+  return destFolder;
+};
+
+const getFilesPath = () => {
+  return app.isPackaged
+    ? path.join(app.getPath("userData"), "." + envs["APP_NAME"])
+    : __dirname;
+};
 
 // set the env
 const initializeEnv = () => {
-  let envs = JSON.parse(fs.readFileSync(path.join(__dirname, 'env.json'), { encoding: 'utf-8' }));
+  envs = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "env.json"), { encoding: "utf-8" })
+  );
+  let rootOrgObj = JSON.parse(
+    fs.readFileSync(
+      path.join(
+        __dirname,
+        frameworkConfig.plugins[0].id,
+        "data",
+        "organizations",
+        `${envs["CHANNEL"]}.json`
+      ),
+      { encoding: "utf-8" }
+    )
+  );
+  process.env.ROOT_ORG_ID =
+    _.get(rootOrgObj, "result.response.content[0].rootOrgId") ||
+    _.get(rootOrgObj, "result.response.content[0].hashTagId");
+  process.env.ROOT_ORG_HASH_TAG_ID = _.get(
+    rootOrgObj,
+    "result.response.content[0].hashTagId"
+  );
+  process.env.TELEMETRY_VALIDATION = app.isPackaged ? "false" : "true";
+  process.env.APP_VERSION = app.getVersion();
+
   _.forEach(envs, (value, key) => {
     process.env[key] = value;
   });
-  win.setProgressBar(0.2);
-}
+  process.env.DATABASE_PATH = path.join(getFilesPath(), "database");
+  process.env.FILES_PATH = getFilesPath();
+  if (!fs.existsSync(process.env.DATABASE_PATH)) {
+    fse.ensureDirSync(process.env.DATABASE_PATH);
+  }
+};
+
+const copyPluginsMetaData = async () => {
+  if (app.isPackaged) {
+    for (const plugin of frameworkConfig.plugins) {
+      //if (!fs.existsSync(path.join(getFilesPath(), plugin.id))) {
+        await fse.copy(
+          path.join(__dirname, plugin.id),
+          path.join(getFilesPath(), plugin.id)
+        );
+      //}
+    }
+  }
+};
+
+// get available port from range(9000-9100) and sets it to run th app
+const setAvailablePort = async () => {
+  let port = await portscanner.findAPortNotInUse(9000, 9100);
+  process.env.APPLICATION_PORT = port;
+};
 
 // Initialize ext framework
 const framework = async () => {
-
-  const subApp = express()
-  subApp.use(bodyParser.json({ limit: '100mb' }))
-  expressApp.use('/', subApp);
+  const subApp = express();
+  subApp.use(bodyParser.json({ limit: "100mb" }));
+  expressApp.use("/", subApp);
   return new Promise((resolve, reject) => {
-    frameworkConfig.db.couchdb.url = process.env.COUCHDB_URL
+    frameworkConfig.db.pouchdb.path = process.env.DATABASE_PATH;
+    frameworkConfig["logBasePath"] = getFilesPath();
     frameworkAPI
-      .bootstrap(frameworkConfig, subApp).then(() => {
-        win.setProgressBar(0.5);
-        resolve()
-      }).catch((error: any) => {
-        win.setProgressBar(0.5);
-        resolve()
+      .bootstrap(frameworkConfig, subApp)
+      .then(() => {
+        resolve();
       })
+      .catch((error: any) => {
+        console.error(error);
+        resolve();
+      });
   });
-}
+};
 
-// start the APP
-
+// start the express app to load in the main window
 const startApp = async () => {
   return new Promise((resolve, reject) => {
     expressApp.listen(process.env.APPLICATION_PORT, (error: any) => {
       if (error) {
         logger.error(error);
-        reject(error)
+        reject(error);
+      } else {
+        logger.info("app is started on port " + process.env.APPLICATION_PORT);
+        resolve();
       }
-      else {
-        win.setProgressBar(0.8);
-        logger.info("listening on " + process.env.APPLICATION_PORT);
-        resolve()
-      }
-    })
+    });
+  });
+};
 
-  })
-}
+// this will check whether all the plugins are initialized using event from each plugin which should emit '<pluginId>:initialized' event
 
-
+const checkPluginsInitialized = () => {
+  //TODO: for now we are checking one plugin need to change once plugin count increases
+  return new Promise(resolve => {
+    EventManager.subscribe("openrap-sunbirded-plugin:initialized", () => {
+      resolve();
+    });
+  });
+};
+// start loading all the dependencies
 const bootstrapDependencies = async () => {
-  //bootstrap container
-  initializeEnv()
-  await prepareDB()
+  await copyPluginsMetaData();
+  await setAvailablePort();
   await framework();
   await containerAPI.bootstrap();
   await startApp();
-}
+  await checkPluginsInitialized();
 
-const checkAdminExists = () => {
-  return new Promise((resolve, reject) => {
-    HTTPService.head('http://admin:password@127.0.0.1:5984').subscribe(data => {
-      resolve(data);
-    }, err => {
-      reject(err);
-    })
-  })
-}
+  //to handle the unexpected navigation to unknown route
 
-const prepareDB = () => {
-
-  //TODO: need to update the DB PORT
-  let data = '"password"'
-  return new Promise((resolve, reject) => {
-    checkAdminExists()
-      .then(data => {
-        win.setProgressBar(0.3);
-        resolve(data);
-      }).catch(error => {
-        HTTPService.put('http://localhost:5984/_node/couchdb@localhost/_config/admins/admin',
-          data).subscribe(data => {
-            win.setProgressBar(0.3);
-            resolve(data);
-          }, err => {
-            logger.error(`while creating admin credentials ${err.message}`)
-            reject(err);
-          })
-      })
-  })
-
-}
+  expressApp.all("*", (req, res) => res.redirect("/"));
+};
 
 function createWindow() {
-
-  // Create the browser window.
-  win = new BrowserWindow({
-    titleBarStyle: 'hidden',
-    show: false,
-    minWidth: 700,
-    minHeight: 500,
-    webPreferences: {
-      nodeIntegration: false
-    }
+  //initialize the environment variables
+  initializeEnv();
+  //splash screen
+  let splash = new BrowserWindow({
+    width: 300,
+    height: 300,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    icon: windowIcon
   });
 
-  //splash screen
-  win.setProgressBar(0.1)
-  let splash = new BrowserWindow({ width: 300, height: 300, transparent: true, frame: false, alwaysOnTop: true });
-  splash.loadFile(path.join(__dirname, "loading", "index.html"));
+  splash.once("show", () => {
+    let telemetryInstance = containerAPI
+      .getTelemetrySDKInstance()
+      .getInstance();
+    telemetryInstance.impression({
+      context: {
+        env: "home"
+      },
+      edata: {
+        type: "view",
+        pageid: "splash",
+        uri: "loading/index.html",
+        duration: (Date.now() - startTime) / 1000
+      }
+    });
 
-  // create admin for the database
+    // Create the main window.
+    win = new BrowserWindow({
+      titleBarStyle: "hidden",
+      show: false,
+      minWidth: 700,
+      minHeight: 500,
+      webPreferences: {
+        nodeIntegration: false
+      },
+      icon: windowIcon
+    });
 
-  bootstrapDependencies().then(() => {
-    win.setProgressBar(0.9);
-    setTimeout(() => {
-      win.setProgressBar(-1);
+      win.webContents.on('new-window', (event, url, frameName, disposition, options, additionalFeatures) => {
+        options.show = false;
+      })
+
+    win.webContents.once("dom-ready", () => {
+      telemetryInstance.start({
+        context: {
+          env: "home"
+        },
+        edata: {
+          type: "app",
+          duration: (Date.now() - startTime) / 1000
+        }
+      });
       splash.destroy();
-      win.loadURL(`http://localhost:${process.env.APPLICATION_PORT}`);
       win.show();
       win.maximize();
-      // Open the DevTools.
-      //win.webContents.openDevTools();
-      win.focus();
-    }, 10000)
-  }).catch(err => {
-    logger.error('unable to start the app ', err);
-  })
+    });
 
+    // create admin for the database
+    bootstrapDependencies()
+      .then(() => {
+        appBaseUrl = `http://localhost:${process.env.APPLICATION_PORT}`;
+        win.loadURL(appBaseUrl);
+        win.focus();
+        checkForOpenFile();
 
-
-  // Emitted when the window is closed.
-  win.on('closed', () => {
-    // Dereference the window object, usually you would store windows
-    // in an array if your app supports multi windows, this is the time
-    // when you should delete the corresponding element.
-    win = null
+        // Open the DevTools.
+        // win.webContents.openDevTools();
+      })
+      .catch(err => {
+        logger.error("unable to start the app ", err);
+      });
+    // Emitted when the window is closed.
+    win.on("closed", () => {
+      // Dereference the window object, usually you would store windows
+      // in an array if your app supports multi windows, this is the time
+      // when you should delete the corresponding element.
+      win = null;
+    });
   });
+  splash.loadFile(path.join(__dirname, "loading", "index.html"));
+  splash.show();
+  
 }
 
-
-
-let gotTheLock = app.requestSingleInstanceLock()
+let gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app.quit()
+  app.quit();
 } else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // if user open's second instance, we should focus our window.
+  app.on("second-instance", (event, commandLine, workingDirectory) => {
+    logger.info(
+      `trying to open second-instance of the app ${JSON.stringify(commandLine)}`
+    );
+    // if the OS is windows file open call will come here when app is already open
+    let interval = setInterval(() => {
+      if (appBaseUrl) {
+        checkForOpenFile(commandLine);
+        clearInterval(interval);
+      }
+    }, 1000);
+    // if user open's second instance, we should focus our window
     if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
+      if (win.isMinimized()) win.restore();
+      win.focus();
     }
-  })
+  });
 }
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on('ready', createWindow);
+app.on("ready", createWindow);
 
 // Quit when all windows are closed.
-app.on('window-all-closed', () => {
+app.on("window-all-closed", () => {
   // On macOS it is common for applications and their menu bar
   // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== 'darwin') {
+  if (process.platform !== "darwin") {
     app.quit();
   }
-})
+});
 
-app.on('activate', () => {
+app.on("activate", () => {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   if (win === null) {
     createWindow();
   }
-})
+});
+
+// below code is to handle the ecar file open event from different os's
+
+// to handle ecar file open in MAC OS
+app.on("open-file", (e, path) => {
+  e.preventDefault();
+  logger.info(`trying to open content with path ${path}`);
+  checkForOpenFile([path]);
+});
+
+const makeImportApiCall = async (contents: Array<string>) => {
+  if(_.isEmpty(contents)){
+    logger.error('Content import api call error', 'Reason: makeImportApiCall called with empty array');
+    return;
+  }
+  await HTTPService.post(`${appBaseUrl}/api/content/v1/import`, contents)
+    .toPromise()
+    .then(data => {
+      win.webContents.executeJavaScript(`
+        var event = new Event("content:import", {bubbles: true});
+        document.dispatchEvent(event);
+      `);
+      logger.info("Content import started successfully", contents);
+    })
+    .catch(error =>
+      logger.error(
+        "Content import failed with",
+        _.get(error, 'response.data') || error.message,
+        "for contents",
+        contents
+      )
+    );
+};
+
+// to handle ecar file open in windows and linux
+const checkForOpenFile = (files?: string[]) => {
+  let contents = files || process.argv;
+  const openFileContents = [];
+  if (
+    (os.platform() === "win32" || os.platform() === "linux") &&
+    !_.isEmpty(contents)
+  ) {
+    _.forEach(contents, file => {
+      if (_.endsWith(_.toLower(file), ".ecar")) {
+        openFileContents.push(file);
+      }
+    });
+    if (appBaseUrl) {
+      makeImportApiCall(openFileContents);
+    }
+    logger.info(
+      `Got request to open the  ecars : ${JSON.stringify(openFileContents)}`
+    );
+  }
+};
