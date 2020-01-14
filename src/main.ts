@@ -1,5 +1,5 @@
 import { containerAPI } from "OpenRAP/dist/api/index";
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import * as _ from "lodash";
 import * as path from "path";
 import * as fs from "fs";
@@ -53,13 +53,13 @@ const reloadUIOnFileChange = () => {
 if (!app.isPackaged) {
   reloadUIOnFileChange();
 }
-expressApp.use("/dialog/content/import", (req, res) => {
-  const filePaths = importContent();
+expressApp.use("/dialog/content/import", async (req, res) => {
+  const filePaths = await importContent();
   res.send({ message: "SUCCESS", responseCode: "OK", filePaths });
 });
 
-const importContent = () => {
-  const filePaths = dialog.showOpenDialog({
+const importContent = async () => {
+  const {filePaths} = await dialog.showOpenDialog({
     properties: ["openFile", "multiSelections"],
     filters: [{ name: "Custom File Type", extensions: ["ecar"] }]
   });
@@ -69,8 +69,8 @@ const importContent = () => {
   return filePaths;
 };
 
-expressApp.use("/dialog/content/export", (req, res) => {
-  let destFolder = exportContent();
+expressApp.use("/dialog/content/export", async (req, res) => {
+  let destFolder = await exportContent();
   if (destFolder && destFolder[0]) {
     res.send({
       message: "SUCCESS",
@@ -87,11 +87,11 @@ expressApp.use("/dialog/content/export", (req, res) => {
   }
 });
 
-const exportContent = () => {
-  const destFolder = dialog.showOpenDialog({
+const exportContent = async () => {
+  const {filePaths} = await dialog.showOpenDialog({
     properties: ["openDirectory", "createDirectory"]
   });
-  return destFolder;
+  return filePaths;
 };
 
 const getFilesPath = () => {
@@ -102,28 +102,32 @@ const getFilesPath = () => {
 
 // set the env
 const initializeEnv = () => {
-  envs = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "env.json"), { encoding: "utf-8" })
-  );
-  let rootOrgObj = JSON.parse(
-    fs.readFileSync(
-      path.join(
-        __dirname,
-        frameworkConfig.plugins[0].id,
-        "data",
-        "organizations",
-        `${envs["CHANNEL"]}.json`
-      ),
-      { encoding: "utf-8" }
-    )
-  );
-  process.env.ROOT_ORG_ID =
-    _.get(rootOrgObj, "result.response.content[0].rootOrgId") ||
-    _.get(rootOrgObj, "result.response.content[0].hashTagId");
-  process.env.ROOT_ORG_HASH_TAG_ID = _.get(
-    rootOrgObj,
-    "result.response.content[0].hashTagId"
-  );
+  let rootOrgId, hashTagId;
+  if(app.isPackaged) {
+    envs = JSON.parse(new Buffer("ENV_STRING_TO_REPLACE", 'base64').toString('ascii')) // deployment step will replace the base64 string 
+    rootOrgId = "ROOT_ORG_ID";
+    hashTagId = "HASH_TAG_ID";
+  } else {
+    envs = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "env.json"), { encoding: "utf-8" })
+    );
+    let rootOrgObj = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          __dirname,
+          frameworkConfig.plugins[0].id,
+          "data",
+          "organizations",
+          `${envs["CHANNEL"]}.json`
+        ),
+        { encoding: "utf-8" }
+      )
+    );
+    rootOrgId = _.get(rootOrgObj, "result.response.content[0].rootOrgId");
+    hashTagId = _.get(rootOrgObj, "result.response.content[0].hashTagId");
+  }
+  process.env.ROOT_ORG_ID = rootOrgId || hashTagId;
+  process.env.ROOT_ORG_HASH_TAG_ID = hashTagId;
   process.env.TELEMETRY_VALIDATION = app.isPackaged ? "false" : "true";
   process.env.APP_VERSION = app.getVersion();
 
@@ -140,12 +144,10 @@ const initializeEnv = () => {
 const copyPluginsMetaData = async () => {
   if (app.isPackaged) {
     for (const plugin of frameworkConfig.plugins) {
-      //if (!fs.existsSync(path.join(getFilesPath(), plugin.id))) {
         await fse.copy(
           path.join(__dirname, plugin.id),
           path.join(getFilesPath(), plugin.id)
         );
-      //}
     }
   }
 };
@@ -205,10 +207,9 @@ const checkPluginsInitialized = () => {
 const bootstrapDependencies = async () => {
   await copyPluginsMetaData();
   await setAvailablePort();
-  await framework();
+  await Promise.all([framework(), checkPluginsInitialized()]);
   await containerAPI.bootstrap();
   await startApp();
-  await checkPluginsInitialized();
 
   //to handle the unexpected navigation to unknown route
 
@@ -225,7 +226,11 @@ function createWindow() {
     transparent: true,
     frame: false,
     alwaysOnTop: true,
-    icon: windowIcon
+    icon: windowIcon,
+    webPreferences: {
+      nodeIntegration: false,
+      enableRemoteModule: false
+    },
   });
 
   splash.once("show", () => {
@@ -251,23 +256,28 @@ function createWindow() {
       minWidth: 700,
       minHeight: 500,
       webPreferences: {
-        nodeIntegration: false
+        nodeIntegration: false,
+        enableRemoteModule: false
       },
       icon: windowIcon
     });
-
+    if(app.isPackaged){
+      win.removeMenu();
+    }
       win.webContents.on('new-window', (event, url, frameName, disposition, options, additionalFeatures) => {
         options.show = false;
       })
-
+    
     win.webContents.once("dom-ready", () => {
+    const startUpDuration = (Date.now() - startTime) / 1000  
+    logger.info(`App took ${startUpDuration} sec to start`);
       telemetryInstance.start({
         context: {
           env: "home"
         },
         edata: {
           type: "app",
-          duration: (Date.now() - startTime) / 1000
+          duration: startUpDuration
         }
       });
       splash.destroy();

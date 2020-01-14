@@ -7,7 +7,7 @@ const path = require("path");
 
 gulp.task("download:portal", cb => {
   download(
-    "Sunbird-Ed/SunbirdEd-portal#release-2.6.0",
+    "Sunbird-Ed/SunbirdEd-portal#release-2.7.0",
     "temp/portal",
     cb
   );
@@ -112,6 +112,13 @@ gulp.task("download:static-data", cb => {
 gulp.task("update-static-data", cb => {
   let targetEnv = process.env.TARGET_ENVIRONMENT;
 
+    // copy data folder to plugin folder
+    fs.copySync(
+      path.join(path.join("temp", "staticData", targetEnv, "plugins")),
+      __dirname
+    );
+
+    
   let appConfig = JSON.parse(
     fs.readFileSync(
       path.join("temp", "staticData", targetEnv, "appConfig.json"),
@@ -136,21 +143,24 @@ gulp.task("update-static-data", cb => {
     appConfig.TELEMETRY_SYNC_INTERVAL_IN_SECS;
   envJSON.APP_ID = appConfig.APP_ID;
   envJSON.TELEMETRY_PACKET_SIZE = appConfig.TELEMETRY_PACKET_SIZE;
-  envJSON.APP_BASE_URL_TOKEN = appConfig.APP_BASE_URL_TOKEN;
   envJSON.APP_NAME = appConfig.APP_NAME;
   envJSON.MODE = appConfig.MODE;
   envJSON.DEVICE_REGISTRY_URL = appConfig.DEVICE_REGISTRY_URL;
   envJSON.FAQ_BLOB_URL = appConfig.FAQ_BLOB_URL;
   envJSON.CUSTODIAN_ORG = appConfig.CUSTODIAN_ORG;
+  envJSON.RELEASE_DATE = Date.now();
   
+  let mainJS = fs.readFileSync("./main.js", 'utf8');
+  let envString = new Buffer(JSON.stringify(envJSON)).toString('base64')
+  mainJS = mainJS.replace('ENV_STRING_TO_REPLACE', envString)
+  fs.unlink("./env.json")
+  let rootOrgObj = JSON.parse(fs.readFileSync(
+    path.join('./openrap-sunbirded-plugin', "data", "organizations", `${envJSON.CHANNEL}.json`),'utf8'));
 
-  fs.writeFileSync("./env.json", JSON.stringify(envJSON));
+  mainJS = mainJS.replace('ROOT_ORG_ID', rootOrgObj.result.response.content[0].rootOrgId)
+  mainJS = mainJS.replace('HASH_TAG_ID', rootOrgObj.result.response.content[0].hashTagId)
+  fs.writeFileSync("./main.js", mainJS);    
 
-  // copy data folder to plugin folder
-  fs.copySync(
-    path.join(path.join("temp", "staticData", targetEnv, "plugins")),
-    __dirname
-  );
 
   // update logos
 
@@ -185,10 +195,15 @@ gulp.task("app:dist", cb => {
   });
 });
 
+gulp.task("clean:portal", cb => {
+  fs.emptyDir("./public/portal", cb);
+});
+
 gulp.task(
   "dist",
   gulp.series(
     "clean", 
+    "clean:portal",
     "app:dist",
     "default",
     "download:static-data",
