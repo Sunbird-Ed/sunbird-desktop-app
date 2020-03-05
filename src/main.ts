@@ -1,5 +1,5 @@
 import { containerAPI } from "OpenRAP/dist/api/index";
-import { app, BrowserWindow, dialog, crashReporter } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import * as _ from "lodash";
 import * as path from "path";
 import * as fs from "fs";
@@ -157,12 +157,6 @@ const initializeEnv = () => {
   if (!fs.existsSync(process.env.DATABASE_PATH)) {
     fse.ensureDirSync(process.env.DATABASE_PATH);
   }
-  crashReporter.start({
-    productName: process.env.APP_ID,
-    companyName: process.env.APP_NAME,
-    submitURL: process.env.APP_BASE_URL + '/crashReport',
-    uploadToServer: false
-  });
 };
 
 const copyPluginsMetaData = async () => {
