@@ -1,14 +1,17 @@
+@import "variables";
+@import "mixins/mixins";
+
 :host {
   .page {
     background: rgba(0, 0, 0, 0.6);
 
     h6 {
-      color: #F3F7FA;
+      color: var(--primary-0);
       font-weight: normal;
     }
   }
   .card-width {
-    width: 292px;
+    width: calculateRem(292px);
   }
 }
 
