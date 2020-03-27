@@ -1,14 +1,16 @@
 {
     "name": "sunbird",
-    "version": "1.0.3",
+    "version": "1.2.0",
     "description": "sunbird desktop app",
     "main": "main.js",
     "scripts": {
-        "build": "tsc",
+        "build-ts": "tsc",
+        "build": "gulp build",
+        "build-copy-clean": "gulp build:copy-clean",
         "test": "echo \"Error: no test specified\" && exit 1",
         "start": "electron --no-sandbox .",
-        "dev": "npm run build && npm run start",
-        "debug": "npm run build && electron . --inspect",
+        "dev": "npm run build-ts && npm run start",
+        "debug": "npm run build-ts && electron . --inspect",
         "dist": "gulp  dist",
         "dist-win64": "npm run build-icons && electron-builder -w --x64",
         "dist-win32": "npm run build-icons && electron-builder -w --ia32",
@@ -20,7 +22,8 @@
         "publish-linux": "npm run build-icons && electron-builder -l --x64 -p always",
         "public": "gulp",
         "postinstall": "electron-builder install-app-deps",
-        "build-icons": "electron-icon-maker --input=logo.png --output=./build"
+        "build-icons": "electron-icon-maker --input=logo.png --output=./build",
+        "build-resource-bundles": "node resourcebundles/build.js"
     },
     "build": {
         "appId": "local.sunbird.desktop",
@@ -64,13 +67,14 @@
     },
     "dependencies": {
         "@project-sunbird/ext-framework-server": "0.1.26",
-        "OpenRAP": "git://github.com/project-sunbird/OpenRAP.git#release-2.7.0",
+        "@project-sunbird/logger": "0.0.4",
+        "OpenRAP": "git://github.com/project-sunbird/OpenRAP.git#release-2.9.0",
         "async": "^2.6.3",
         "body-parser": "^1.19.0",
         "express": "^4.17.0",
         "fs-extra": "^8.1.0",
         "lodash": "^4.17.15",
-        "openrap-sunbirded-plugin": "0.0.52",
+        "openrap-sunbirded-plugin": "0.0.74",
         "portscanner": "^2.2.0",
         "request": "^2.88.0",
         "rxjs": "^6.2.1",
@@ -80,7 +84,6 @@
         "@types/lodash": "^4.14.123",
         "cpy-cli": "^2.0.0",
         "devtron": "^1.4.0",
-        "download-git-repo": "^1.1.0",
         "electron": "7.1.7",
         "electron-builder": "^21.2.0",
         "electron-builder-squirrel-windows": "^22.2.0",
@@ -88,7 +91,8 @@
         "grunt": "^1.0.4",
         "gulp": "^4.0.2",
         "nodegit": "^0.26.3",
-        "typescript": "^3.7.3"
+        "typescript": "^3.7.3",
+        "properties": "^1.2.1"
     },
     "keywords": [],
     "license": "MIT",
