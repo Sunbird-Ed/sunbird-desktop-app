@@ -15,6 +15,19 @@ import { Subject } from "rxjs";
 import { debounceTime } from "rxjs/operators";
 import { HTTPService } from "@project-sunbird/ext-framework-server/services";
 import * as os from "os";
+const { session } = require('electron')
+const setSecurityPolicy = () => {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [`script-src 'self' 'unsafe-eval' 'unsafe-inline';sandbox ${sandbox};img-src * blob:;frame-src * https://www.youtube.com/;child-src * https://www.youtube.com/;worker-src * data: 'unsafe-eval' 'unsafe-inline' blob:`]
+      }, 
+      cancel: false,
+    })
+  })
+}
+const sandbox = `allow-same-origin allow-scripts allow-popups allow-modals allow-orientation-lock allow-pointer-lock allow-presentation allow-popups-to-escape-sandbox allow-top-navigation`
 const startTime = Date.now();
 let envs = {};
 const windowIcon = path.join(__dirname, "build", "icons", "png", "512x512.png");
@@ -205,6 +218,7 @@ const checkPluginsInitialized = () => {
 const bootstrapDependencies = async () => {
   await copyPluginsMetaData();
   await setAvailablePort();
+  setSecurityPolicy(); //should be called after env variable are initialized and port is set
   await framework();
   await containerAPI.bootstrap();
   await startApp();
@@ -284,7 +298,7 @@ function createWindow() {
         checkForOpenFile();
 
         // Open the DevTools.
-        // win.webContents.openDevTools();
+        win.webContents.openDevTools();
       })
       .catch(err => {
         logger.error("unable to start the app ", err);
