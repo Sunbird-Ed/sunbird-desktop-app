@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, ElementRef, Renderer2, ChangeDetectorRef,  HostListener} from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, Renderer2, ChangeDetectorRef, HostListener, AfterViewInit } from '@angular/core';
 import { ResourceService, ConfigService } from '@sunbird/shared';
 import { environment } from '@sunbird/environment';
 import { Router, ActivatedRoute, NavigationEnd } from '@angular/router';
@@ -10,7 +10,7 @@ import * as _ from 'lodash-es';
   selector: 'app-footer',
   templateUrl: './main-footer.component.html'
 })
-export class MainFooterComponent implements OnInit {
+export class MainFooterComponent implements OnInit, AfterViewInit {
   @ViewChild('footerFix') footerFix: ElementRef;
   /**
    * reference of resourceService service.
