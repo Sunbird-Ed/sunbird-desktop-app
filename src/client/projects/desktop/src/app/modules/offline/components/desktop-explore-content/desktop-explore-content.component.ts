@@ -175,6 +175,7 @@ export class DesktopExploreContentComponent implements OnInit, OnDestroy {
     event['data'] = event.content;
     this.contentName = event.content.name;
     this.contentData = event.data;
+    let telemetryButtonId: any;
     switch (event.hover.type.toUpperCase()) {
       case 'OPEN':
         this.playContent(event);
@@ -187,13 +188,16 @@ export class DesktopExploreContentComponent implements OnInit, OnDestroy {
           this.showDownloadLoader = true;
           this.downloadContent(this.downloadIdentifier);
         }
-        const id = this.contentData.mimeType !== 'application/vnd.ekstep.content-collection' ? 'download-content' : 'download-collection';
-        this.logTelemetry(this.contentData, id);
+        telemetryButtonId = this.contentData.mimeType !==
+          'application/vnd.ekstep.content-collection' ? 'download-content' : 'download-collection';
+        this.logTelemetry(this.contentData, telemetryButtonId);
         break;
       case 'SAVE':
         this.showExportLoader = true;
         this.exportContent(_.get(event, 'content.metaData.identifier'));
-        this.logTelemetry(this.contentData, 'export-content');
+        telemetryButtonId = this.contentData.mimeType !==
+          'application/vnd.ekstep.content-collection' ? 'export-content' : 'export-collection';
+        this.logTelemetry(this.contentData, telemetryButtonId);
         break;
     }
   }
