@@ -1,6 +1,14 @@
 @import "variables";
 @import "mixins/mixins";
 
+:host{
+  svg.svgback-icon{
+    html[dir="rtl"] & {
+      transform: rotate(180deg);
+    }
+   }
+  }
+
 .content-header {
   background:#FAFAFA;
   min-height: calculateRem(14px);
