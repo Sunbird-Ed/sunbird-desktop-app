@@ -52,6 +52,7 @@
   float: right;
 }
 
+
 input[type="checkbox"] {
   cursor: pointer;
   position: absolute;
@@ -80,6 +81,7 @@ input[type=checkbox]:checked:after {
   background-color: #0b4f9d;
   color: var(--white);
 }
+
 
 .textarea {
   resize: none;
