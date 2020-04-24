@@ -35,6 +35,7 @@
 
 .options-content {
   width: 55%;
+  position: relative;
 }
 
 .options-content-left {
@@ -51,16 +52,33 @@
   float: right;
 }
 
+input[type="checkbox"] {
+  cursor: pointer;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+  width: $base-block-space * 2;
+  height: $base-block-space * 2;
+  outline: 0;
+}
+
 input[type=checkbox]:after {
   content: " ";
-  background-color: #0b4f9d;
+  background-color: transparent;
   color: var(--white);
   display: inline-block;
   visibility: visible;
+  width: $base-block-space * 2;
+  height: $base-block-space * 2;
 }
 
 input[type=checkbox]:checked:after {
-  content: "\2713";
+  content: '✔';
+  border-radius: $sb-checkbox-border-radius;
+  font-weight: normal;
+  background-color: #0b4f9d;
+  color: var(--white);
 }
 
 .textarea {
