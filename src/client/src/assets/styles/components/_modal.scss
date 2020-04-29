@@ -256,5 +256,14 @@ $sb-modal-corner-radius: $base-block-space;
   }
 }
 
-
-
+// terms of use modal
+  .ui.modal.large .sb-modal-content{
+    height:100% !important;
+    width: 100%;
+    .form{
+      .policy-iframe{
+        width:100%;
+        height:calc(100vh - 200px) !important;
+      }
+    }
+  }
