@@ -247,3 +247,14 @@ $sb-modal-corner-radius: $base-block-space;
         }
     }
 }
+
+//load-content modal
+[dir="rtl"] .sb-modal {
+  .sb-radio-title{
+    padding-right: 2rem !important;
+    padding-left: 0 !important;
+  }
+}
+
+
+
