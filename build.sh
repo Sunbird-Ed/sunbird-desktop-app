@@ -3,8 +3,7 @@
 #Build 
 cd src
 export NODE_OPTIONS=--max_old_space_size=3012
-chmod 777 /offline/src/node_modules
-npm install --unsafe-perm
+npm install --unsafe-perm=true --allow-root
 npm install
 npm run build
 cd client
